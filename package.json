@@ -1,0 +1,26 @@
+{
+  "name": "mac-price-for-performance",
+  "version": "1.0.0",
+  "description": "data scraper and analyzer that fetches data about refurbished Apple products and their Geekbench scores",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "ts-node index.ts",
+    "get-details": "ts-node get-details.ts"
+  },
+  "keywords": [],
+  "author": "Paul Jonees",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.8",
+    "cheerio": "^1.0.0-rc.12",
+    "nanoid": "^3.3.7"
+  },
+  "devDependencies": {
+    "@types/axios": "^0.14.0",
+    "@types/cheerio": "^0.22.35",
+    "@types/node": "^20.12.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}
