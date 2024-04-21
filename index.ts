@@ -26,7 +26,7 @@ interface GeekbenchData {
   cpuCoreCount: number;
   gpuCoreCount: number;
   sizeInches?: number;
-  year: string;
+  model: string;
   singleCoreScore?: number;
   multiCoreScore?: number;
   openCLScore?: number;
@@ -42,8 +42,8 @@ async function fetchAndParseGeekbenchData(
     const $ = cheerio.load(data);
     const scrapedData: GeekbenchData[] = [];
 
-    let cpuCount = 0;
-    let gpuCount = 0;
+    let cpuCoreCount = 0;
+    let gpuCoreCount = 0;
 
     for (let geekbenchScoreTypeValue of Object.values(GeekbenchScoreType)) {
       $(`#${geekbenchScoreTypeValue} .table-wrapper #mac > tbody > tr`).each(
@@ -59,13 +59,21 @@ async function fetchAndParseGeekbenchData(
             .text()
             .replace(/\s+/g, " ")
             .trim();
-          const originalPath: string | undefined = $(element)
+          const originalPathComponent: string | undefined = $(element)
             .find("td.name > a")
             ?.attr("href")
             ?.trim();
+          const originalPath: string | undefined = originalPathComponent
+            ? "https://browser.geekbench.com" + originalPathComponent
+            : undefined;
           const score: string = $(element).find("td.score").text().trim(); // Assumes score is in the second <td>
 
+          const productType = originalName.replace(/\s*\([^)]*\)/g, "").trim();
+
           const processorTypeMatch = originalDescription.match(/^(.*?)\s*@/);
+          const processorType = processorTypeMatch
+            ? processorTypeMatch[1].trim()
+            : "Unknown";
 
           const clockSpeedMatch =
             originalDescription.match(/@ ([\d.]+)\s*GHz/i);
@@ -73,31 +81,28 @@ async function fetchAndParseGeekbenchData(
             ? parseFloat(clockSpeedMatch[1])
             : -1;
 
-          // Match "CPU cores" and "GPU cores"
           const cpuCoreMatch = originalDescription.match(/(\d+)\s*CPU cores/i);
           const gpuCoreMatch = originalDescription.match(/(\d+)\s*GPU cores/i);
-
-          // Match generic "cores" when not preceded by "CPU" or "GPU"
           const genericCoreMatch = originalDescription.match(/(\d+)\s*cores/i);
 
           if (cpuCoreMatch) {
-            cpuCount = parseInt(cpuCoreMatch[1], 10);
+            cpuCoreCount = parseInt(cpuCoreMatch[1], 10);
           }
 
           if (gpuCoreMatch) {
-            gpuCount = parseInt(gpuCoreMatch[1], 10);
+            gpuCoreCount = parseInt(gpuCoreMatch[1], 10);
           }
 
           // Use the generic cores match if there's no specific CPU or GPU core match
           if (!cpuCoreMatch && !gpuCoreMatch && genericCoreMatch) {
-            cpuCount = parseInt(genericCoreMatch[1], 10);
-            gpuCount = 0;
+            cpuCoreCount = parseInt(genericCoreMatch[1], 10);
+            gpuCoreCount = 0;
           }
 
           const sizeAndModelYearMatch = originalName.match(/\(([^)]+)\)/);
 
           let sizeInches = -1;
-          let year = "";
+          let model = "";
 
           if (sizeAndModelYearMatch) {
             const sizeInchesMatch =
@@ -106,31 +111,34 @@ async function fetchAndParseGeekbenchData(
             if (sizeInchesMatch) {
               sizeInches = parseFloat(sizeInchesMatch[1]);
 
-              year = sizeAndModelYearMatch[1]
+              model = sizeAndModelYearMatch[1]
                 .replace(/(\d+\.\d+|\d+)-inch/, "")
+                .replace(/,\s*/, "")
                 .trim();
             } else {
-              year = sizeAndModelYearMatch[1].trim();
+              model = sizeAndModelYearMatch[1].trim();
             }
           }
 
-          const existingEntry = scrapedData.find(
+          const existingEntryIndex = scrapedData.findIndex(
             (entry) => entry.originalPath === originalPath
           );
 
-          if (existingEntry) {
+          if (existingEntryIndex !== -1) {
             switch (geekbenchScoreTypeValue) {
               case GeekbenchScoreType.singleCore:
-                existingEntry.singleCoreScore = parseInt(score);
+                scrapedData[existingEntryIndex].singleCoreScore =
+                  parseInt(score);
                 break;
               case GeekbenchScoreType.multiCore:
-                existingEntry.multiCoreScore = parseInt(score);
+                scrapedData[existingEntryIndex].multiCoreScore =
+                  parseInt(score);
                 break;
               case GeekbenchScoreType.openCL:
-                existingEntry.openCLScore = parseInt(score);
+                scrapedData[existingEntryIndex].openCLScore = parseInt(score);
                 break;
               case GeekbenchScoreType.metal:
-                existingEntry.metalScore = parseInt(score);
+                scrapedData[existingEntryIndex].metalScore = parseInt(score);
                 break;
             }
           } else {
@@ -141,13 +149,11 @@ async function fetchAndParseGeekbenchData(
               clockSpeedGHz,
               originalPath,
               sizeInches,
-              year,
-              productType: originalName.replace(/\s*\([^)]*\)/g, "").trim(),
-              processorType: processorTypeMatch
-                ? processorTypeMatch[1].trim()
-                : "",
-              cpuCoreCount: cpuCount,
-              gpuCoreCount: gpuCount,
+              model,
+              productType,
+              processorType,
+              cpuCoreCount,
+              gpuCoreCount,
             };
 
             switch (geekbenchScoreTypeValue) {
@@ -264,7 +270,9 @@ async function fetchAndParseAppleData(urlString: string): Promise<AppleData[]> {
 interface MergedData {
   name: string;
   price: string;
-  path?: string;
+  description?: string;
+  applePath?: string;
+  geekbenchPath?: string;
   geekbenchPointPerDollar: number;
 }
 
@@ -286,8 +294,6 @@ async function main(): Promise<void> {
   const mergedData: MergedData[] = [];
 
   for (const appleDatum of appleData) {
-    let foundMatch = false;
-
     if (
       productTypeFilter != undefined &&
       appleDatum.productType !== productTypeFilter
@@ -303,46 +309,33 @@ async function main(): Promise<void> {
         geekbenchDatum.cpuCoreCount === appleDatum.cpuCoreCount &&
         geekbenchDatum.gpuCoreCount === appleDatum.gpuCoreCount
       ) {
-        const overallPerformanceMetric =
-          (geekbenchDatum.multiCoreScore ?? 0) +
-          (geekbenchDatum.singleCoreScore ?? 0) +
-          (geekbenchDatum.openCLScore ?? 0) +
-          (geekbenchDatum.metalScore ?? 0);
+        const overallPerformanceMetric = geekbenchDatum.singleCoreScore ?? 0;
         const performancePerDollar =
-          overallPerformanceMetric / appleDatum.price;
-        mergedData.push({
-          name: appleDatum.originalName,
-          price: appleDatum.originalPrice,
-          path: appleDatum.originalPath,
-          geekbenchPointPerDollar: performancePerDollar,
-        });
-        foundMatch = true;
-      }
-    }
+          Math.round((overallPerformanceMetric / appleDatum.price) * 100) / 100;
+        let description: string | undefined = undefined;
 
-    if (!foundMatch) {
-    }
-    for (const geekbenchDatum of geekbenchData) {
-      // if you can't find the specific size match, try to match without size
-      if (
-        geekbenchDatum.processorType === appleDatum.processorType &&
-        geekbenchDatum.cpuCoreCount === appleDatum.cpuCoreCount &&
-        geekbenchDatum.gpuCoreCount === appleDatum.gpuCoreCount
-      ) {
-        const overallPerformanceMetric =
-          (geekbenchDatum.multiCoreScore ?? 0) +
-          (geekbenchDatum.singleCoreScore ?? 0) +
-          (geekbenchDatum.openCLScore ?? 0) +
-          (geekbenchDatum.metalScore ?? 0);
-        const performancePerDollar =
-          overallPerformanceMetric / appleDatum.price;
+        if (appleDatum.originalPath) {
+          try {
+            const response = await axios.get(appleDatum.originalPath);
+            const $ = cheerio.load(response.data);
+            description =
+              $('head meta[name="description"]').attr("content") ??
+              $('meta[property="og:description"]').attr("content");
+          } catch (error) {
+            console.error("Error scraping the page:", error);
+          }
+        }
+
         mergedData.push({
           name: appleDatum.originalName,
           price: appleDatum.originalPrice,
-          path: appleDatum.originalPath,
+          description,
+          applePath: appleDatum.originalPath,
+          geekbenchPath: geekbenchDatum.originalPath,
           geekbenchPointPerDollar: performancePerDollar,
         });
-        foundMatch = true;
+
+        continue;
       }
     }
   }
