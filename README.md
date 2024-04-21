@@ -20,9 +20,7 @@ The main script is `index.ts`. It fetches data about Apple products and their Ge
 
 The script first fetches data about Apple products. It then filters the data based on a product type filter, if one is provided.
 
-Next, it loops over the Apple data and the Geekbench data. If it finds a match between an Apple product and a Geekbench entry (based on product type, size, processor type, and CPU and GPU core counts), it calculates an overall performance metric for the product. This metric is the sum of the product's multi-core score, single-core score, OpenCL score, and Metal score.
-
-Finally, it calculates a performance-per-dollar metric by dividing the overall performance metric by the product's price. It adds this metric, along with the product's name and price, to the `mergedData` array. You can also get additional details, and the final product looks like this:
+Next, it loops over the Apple data and the Geekbench data. If it finds a match between an Apple product and a Geekbench entry (based on product type, size, processor type, and CPU and GPU core counts), it calculates a performance-per-dollar metric by dividing the single core performance by the product's price. It adds this metric, along with the product's name and price, to the `mergedData` array. You can also get additional details, and the final product looks like this:
 
 ```json
 [
